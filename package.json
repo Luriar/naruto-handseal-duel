@@ -1,0 +1,16 @@
+{
+  "name": "naruto-handseal-duel",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Webcam-based hand seal recognition lab and jutsu duel prototype.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm --workspace apps/web run dev",
+    "build": "npm --workspace apps/web run build",
+    "preview": "npm --workspace apps/web run preview",
+    "lint": "npm --workspace apps/web run lint"
+  }
+}
