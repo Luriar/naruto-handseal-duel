@@ -14,7 +14,7 @@ import {
   calculateSealMetrics,
   createConfusionMatrix,
 } from '../seal-recognition/confusionMatrix'
-import { classifySeal } from '../seal-recognition/ruleBasedSealClassifier'
+import { classifySeal, type PredictionStatus } from '../seal-recognition/ruleBasedSealClassifier'
 import {
   ALL_SEALS,
   MVP_0_LABELS,
@@ -23,6 +23,10 @@ import {
   type Seal,
   type SealSample,
 } from '../seal-recognition/sealTypes'
+import {
+  createSealObservationExport,
+  type SealObservation,
+} from '../seal-recognition/sealObservation'
 
 type TrackerStatus = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -45,6 +49,10 @@ export function HandSealRecognitionLab() {
   )
   const [samples, setSamples] = useState<SealSample[]>([])
   const [replayFrames, setReplayFrames] = useState<RawReplayFrame[]>([])
+  const [intendedSeal, setIntendedSeal] = useState<Seal>('snake')
+  const [observationNote, setObservationNote] = useState('')
+  const [observations, setObservations] = useState<SealObservation[]>([])
+  const latestPredictionRef = useRef<RawReplayFrame | null>(null)
   const handLandmarkerRef = useRef<MediaPipeHandLandmarker | null>(null)
   const animationFrameRef = useRef<number | null>(null)
 
@@ -105,6 +113,7 @@ export function HandSealRecognitionLab() {
           usedMirrorVariant: prediction.usedMirrorVariant,
         }
 
+        latestPredictionRef.current = replayFrame
         setLatestFrame(frame)
         setReplayFrames((currentFrames) => [...currentFrames, replayFrame])
         setSamples((currentSamples) => {
@@ -224,6 +233,54 @@ export function HandSealRecognitionLab() {
     downloadJson('hand-seal-raw-replay.json', createRawReplayExport(replayFrames))
   }
 
+  const saveObservation = () => {
+    const frame = latestPredictionRef.current
+    if (!frame || !frame.coarseGestureFeatures) {
+      return
+    }
+
+    const observation: SealObservation = {
+      observationId: `${frame.timestamp.toFixed(0)}-${observations.length + 1}`,
+      timestamp: frame.timestamp,
+      intendedSeal,
+      note: observationNote,
+      finalPrediction: frame.predictedSeal ?? frame.rawPrediction,
+      finalConfidence: frame.confidence,
+      provisionalPrediction: frame.provisionalSeal ?? 'unknown',
+      provisionalConfidence: frame.provisionalConfidence ?? 0,
+      predictionStatus: frame.predictionStatus ?? 'missing_hands',
+      failureReason: frame.failureReason,
+      bestFamily: frame.bestFamily ?? 'unknown',
+      bestFamilyConfidence: frame.bestFamilyConfidence ?? 0,
+      secondFamily: frame.secondBestFamily ?? 'unknown',
+      secondFamilyConfidence: frame.secondBestFamilyConfidence ?? 0,
+      familyAmbiguityGap: frame.familyAmbiguityGap ?? 0,
+      bestInFamilySeal: frame.bestInFamilySeal ?? 'unknown',
+      bestInFamilyConfidence: frame.bestInFamilyConfidence ?? 0,
+      secondInFamilySeal: frame.secondInFamilySeal ?? 'unknown',
+      secondInFamilyConfidence: frame.secondInFamilyConfidence ?? 0,
+      inFamilyAmbiguityGap: frame.inFamilyAmbiguityGap ?? 0,
+      topSealScores: frame.topRuleScores ?? [],
+      familyScores: frame.familyScores ?? [],
+      coarseGestureFeatures: frame.coarseGestureFeatures,
+      trackingMode: frame.coarseGestureFeatures.trackingMode,
+      featureEvaluationMode:
+        frame.featureEvaluationMode ?? 'normal_two_hand_features',
+    }
+
+    setObservations((current) => [...current, observation])
+    setObservationNote('')
+  }
+
+  const clearObservations = () => setObservations([])
+
+  const exportObservations = () => {
+    downloadJson(
+      'hand-seal-observations.json',
+      createSealObservationExport(observations),
+    )
+  }
+
   return (
     <main className="lab-shell">
       <header className="lab-header">
@@ -305,6 +362,27 @@ export function HandSealRecognitionLab() {
 
           <section className="panel-section">
             <h2>Classifier</h2>
+            <StatusBanner
+              status={latestPrediction?.predictionStatus ?? 'missing_hands'}
+              finalSeal={
+                latestPrediction?.predictedSeal ??
+                latestPrediction?.rawPrediction ??
+                'unknown'
+              }
+              provisionalSeal={latestPrediction?.provisionalSeal ?? 'unknown'}
+              provisionalConfidence={
+                latestPrediction?.provisionalConfidence ?? 0
+              }
+              trackingMode={
+                latestPrediction?.coarseGestureFeatures?.trackingMode ??
+                'no_hands'
+              }
+              featureMode={
+                latestPrediction?.featureEvaluationMode ??
+                'normal_two_hand_features'
+              }
+              failureReason={latestPrediction?.failureReason ?? 'none'}
+            />
             <dl className="prediction-list">
               <div>
                 <dt>Coordinate</dt>
@@ -666,6 +744,59 @@ export function HandSealRecognitionLab() {
           </section>
 
           <section className="panel-section">
+            <h2>Observation Logger</h2>
+            <p className="hint-text">
+              Snapshot the live prediction + features against the seal you
+              intended to perform. Used for manual tuning, not ML training.
+            </p>
+            <label className="field-label" htmlFor="intended-seal">
+              Intended Seal
+            </label>
+            <select
+              id="intended-seal"
+              value={intendedSeal}
+              onChange={(event) => setIntendedSeal(event.target.value as Seal)}
+            >
+              {ALL_SEALS.filter((seal) => seal !== 'unknown').map((seal) => (
+                <option key={seal} value={seal}>
+                  {SEAL_DISPLAY_NAMES[seal]}
+                </option>
+              ))}
+            </select>
+            <label className="field-label" htmlFor="observation-note">
+              Note (optional)
+            </label>
+            <input
+              id="observation-note"
+              type="text"
+              className="note-input"
+              value={observationNote}
+              onChange={(event) => setObservationNote(event.target.value)}
+              placeholder="e.g. lighting dim, slight tilt"
+            />
+            <div className="observation-actions">
+              <button
+                type="button"
+                onClick={saveObservation}
+                disabled={!latestPrediction}
+              >
+                Save Observation
+              </button>
+              <button type="button" onClick={clearObservations}>
+                Clear ({observations.length})
+              </button>
+              <button
+                type="button"
+                onClick={exportObservations}
+                disabled={observations.length === 0}
+              >
+                Export JSON
+              </button>
+            </div>
+            <ObservationSummary observations={observations} />
+          </section>
+
+          <section className="panel-section">
             <h2>Exports</h2>
             <div className="export-actions">
               <button type="button" onClick={exportSamples}>
@@ -754,4 +885,134 @@ function formatDecimal(value: number): string {
 
 function getMirrorMode(mirrorPreview: boolean): MirrorMode {
   return mirrorPreview ? 'selfie_preview' : 'none'
+}
+
+type StatusTone = 'accepted' | 'provisional' | 'ambiguous' | 'tracking' | 'idle'
+
+const STATUS_LABEL: Record<PredictionStatus, string> = {
+  accepted: 'Accepted',
+  family_accepted_seal_ambiguous: 'Family OK, seal ambiguous',
+  ambiguous_same_family: 'Ambiguous within family',
+  ambiguous_cross_family: 'Ambiguous across families',
+  family_ambiguous: 'Family ambiguous',
+  low_confidence: 'Low confidence',
+  missing_hands: 'Missing hands',
+}
+
+const STATUS_TONE: Record<PredictionStatus, StatusTone> = {
+  accepted: 'accepted',
+  family_accepted_seal_ambiguous: 'provisional',
+  ambiguous_same_family: 'provisional',
+  ambiguous_cross_family: 'ambiguous',
+  family_ambiguous: 'ambiguous',
+  low_confidence: 'ambiguous',
+  missing_hands: 'tracking',
+}
+
+type StatusBannerProps = {
+  status: PredictionStatus
+  finalSeal: Seal
+  provisionalSeal: Seal
+  provisionalConfidence: number
+  trackingMode: string
+  featureMode: string
+  failureReason: string
+}
+
+function StatusBanner({
+  status,
+  finalSeal,
+  provisionalSeal,
+  provisionalConfidence,
+  trackingMode,
+  featureMode,
+  failureReason,
+}: StatusBannerProps) {
+  const tone: StatusTone =
+    status === 'missing_hands' && trackingMode === 'merged_two_hand_candidate'
+      ? 'provisional'
+      : (STATUS_TONE[status] ?? 'idle')
+  const trackingNote =
+    trackingMode === 'merged_two_hand_candidate'
+      ? 'merged-blob candidate'
+      : trackingMode === 'single_true_hand'
+        ? 'only one hand tracked'
+        : trackingMode === 'no_hands'
+          ? 'no hands detected'
+          : featureMode === 'merged_single_blob_features'
+            ? 'merged-blob features in use'
+            : 'two-hand features'
+
+  return (
+    <div className="status-banner" data-tone={tone}>
+      <div className="status-banner-row">
+        <span className="status-banner-label">Status</span>
+        <strong className="status-banner-value">{STATUS_LABEL[status]}</strong>
+      </div>
+      <div className="status-banner-row">
+        <span className="status-banner-label">Final</span>
+        <strong className="status-banner-value">
+          {SEAL_DISPLAY_NAMES[finalSeal]}
+        </strong>
+      </div>
+      <div className="status-banner-row">
+        <span className="status-banner-label">Provisional</span>
+        <strong className="status-banner-value">
+          {SEAL_DISPLAY_NAMES[provisionalSeal]} (
+          {Math.round(provisionalConfidence * 100)}%)
+        </strong>
+      </div>
+      <div className="status-banner-row status-banner-meta">
+        <span>{trackingNote}</span>
+        {failureReason !== 'none' && <span>reason: {failureReason}</span>}
+      </div>
+    </div>
+  )
+}
+
+type ObservationSummaryProps = {
+  observations: SealObservation[]
+}
+
+function ObservationSummary({ observations }: ObservationSummaryProps) {
+  if (observations.length === 0) {
+    return <p className="hint-text">No observations saved yet.</p>
+  }
+
+  const recent = observations.slice(-5).reverse()
+
+  return (
+    <div className="observation-summary">
+      <p className="hint-text">
+        Saved: {observations.length}. Showing latest {recent.length}.
+      </p>
+      <ol className="observation-list">
+        {recent.map((observation) => {
+          const matched =
+            observation.finalPrediction === observation.intendedSeal
+              ? 'match'
+              : observation.provisionalPrediction === observation.intendedSeal
+                ? 'provisional'
+                : 'miss'
+          return (
+            <li key={observation.observationId} data-match={matched}>
+              <strong>
+                {SEAL_DISPLAY_NAMES[observation.intendedSeal]}
+                {' → '}
+                {SEAL_DISPLAY_NAMES[observation.finalPrediction]}
+              </strong>
+              <span>
+                prov: {SEAL_DISPLAY_NAMES[observation.provisionalPrediction]}
+                {' | '}
+                fam: {observation.bestFamily}
+                {' | '}
+                {observation.predictionStatus}
+              </span>
+              {observation.note && <em>{observation.note}</em>}
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
 }

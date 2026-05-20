@@ -127,6 +127,8 @@ export const SEAL_RULE_CONFIG = {
   BUNDLED_BLOB_HIGH: 0.62,
   RAM_INTERLOCK_PENALTY: 0.42,
   TIGER_INTERLOCK_PENALTY: 0.22,
+  DRAGON_FAMILY_GATE_FLOOR: 0.35,
+  DRAGON_FAMILY_GATE_PENALTY: 0.6,
 } as const
 
 const CLASSIFIABLE_SEALS = ALL_SEALS.filter((seal) => seal !== 'unknown')
@@ -294,106 +296,123 @@ function scoreSeal(seal: Seal, features: CoarseGestureFeatures): SealRuleScore {
   const dragonInterlockPenalty = interlockClasp * 0.36
   const dragonBundledPenalty = bundledBlob * 0.38
   const dragonWidePenalty = horizontal * wide * 0.24
+  const dragonOffsetPenalty = offset * 0.34
   const dragonNotSimpleTower = 1 - towerLike * symmetric * 0.8
   const flatStack = horizontal * scoreMax(features.absVerticalCenterOffset, 0.22)
 
   const ruleMap: Record<Exclude<Seal, 'unknown'>, WeightedRule[]> = {
     rat: [
-      weighted(compact, 0.24, 'compact hidden-finger clasp'),
+      weighted(compact, 0.2, 'compact hidden-finger clasp'),
       weighted(scoreMax(effectiveHandDistance, 0.42), 0.18, 'hand centers close'),
-      weighted(overlapModerate, 0.16, 'moderate overlap'),
-      weighted(scoreBetween(effectiveFingertipSpread, 0.12, 0.52), 0.16, 'low-to-moderate fingertip spread'),
-      weighted(scoreNear(effectiveAspectRatio, 1.05, 0.72), 0.12, 'box-like but not wide'),
-      weighted(1 - towerLike * 0.72, 0.08, 'not tower-like'),
-      weighted(1 - bundledBlob * 0.55, 0.06, 'less bundled than boar'),
+      weighted(overlapModerate, 0.16, 'moderate overlap (not snake-tight)'),
+      weighted(scoreBetween(effectiveFingertipSpread, 0.12, 0.52), 0.14, 'low-to-moderate fingertip spread'),
+      weighted(scoreNear(effectiveAspectRatio, 1.05, 0.72), 0.1, 'box-like but not wide'),
+      weighted(1 - towerLike * 0.72, 0.06, 'not tower-like'),
+      weighted(1 - bundledBlob * 0.6, 0.08, 'less bundled than boar'),
+      weighted(scoreMax(features.handBoxOverlapRatio, 0.55), 0.08, 'overlap not snake-tight'),
+      weighted(1 - interlockClasp * 0.6, 0.06, 'less interlocked than snake'),
     ],
     ox: [
-      weighted(offset, 0.34, 'strong crossing/offset structure'),
-      weighted(asymmetric, 0.22, 'angular asymmetric hand relation'),
-      weighted(overlapModerate, 0.18, 'moderate overlap'),
+      weighted(offset, 0.3, 'strong crossing/offset structure'),
+      weighted(asymmetric, 0.2, 'angular asymmetric hand relation'),
+      weighted(scoreMin(features.handBoxOverlapRatio, 0.32), 0.18, 'noticeable overlap from crossing'),
       weighted(scoreMin(effectiveHandDistance, 0.36), 0.14, 'noticeable center offset'),
-      weighted(notTooCompact, 0.12, 'not a bundled clasp'),
+      weighted(notTooCompact, 0.1, 'not a bundled clasp'),
+      weighted(interlockClasp * 0.5 + 0.25, 0.08, 'some clasp/interlock evidence'),
     ],
     tiger: [
-      weighted(tallNarrow, 0.3, 'tall narrow central tower'),
-      weighted(vertical, 0.22, 'strong verticality'),
-      weighted(towerLike, 0.2, 'tower-like family evidence'),
+      weighted(tallNarrow, 0.28, 'tall narrow central tower'),
+      weighted(vertical, 0.2, 'strong verticality'),
+      weighted(towerLike, 0.18, 'tower-like family evidence'),
       weighted(symmetric, 0.14, 'high left-right symmetry'),
-      weighted(upperTips, 0.14, 'fingertips concentrated high'),
+      weighted(upperTips, 0.12, 'fingertips concentrated high'),
+      weighted(scoreMax(effectiveFingertipSpread, 0.5), 0.08, 'narrow tower, not gathered/spread'),
+      weighted(scoreMax(effectiveAspectRatio, 0.8), 0.06, 'narrower than ram'),
       weighted(-tigerInterlockPenalty, 0.18, 'tiger penalty: compact interlock, not tower-like'),
     ],
     rabbit: [
-      weighted(compact, 0.22, 'compact one-sided sign'),
-      weighted(asymmetric, 0.24, 'one-sided/protruding tendency'),
-      weighted(scoreMax(effectiveOverlap, 0.54), 0.2, 'less overlap than ox'),
-      weighted(offset, 0.18, 'small side offset'),
-      weighted(scoreBetween(effectiveFingertipSpread, 0.18, 0.56), 0.16, 'controlled protrusion'),
+      weighted(asymmetric, 0.26, 'one-sided/protruding tendency'),
+      weighted(compact, 0.2, 'compact one-sided sign'),
+      weighted(scoreMax(effectiveOverlap, 0.5), 0.2, 'less overlap than ox'),
+      weighted(offset * 0.7 + 0.2, 0.16, 'small but real side offset'),
+      weighted(scoreBetween(effectiveFingertipSpread, 0.18, 0.56), 0.14, 'controlled protrusion'),
+      weighted(scoreMax(features.normalizedHandCenterDistance, 0.6), 0.06, 'hands not far apart'),
     ],
     dragon: [
       weighted(vertical * dragonNotSimpleTower, 0.16, 'raised vertical structure'),
-      weighted(spread, 0.32, 'high visible fingertip spread'),
-      weighted(lowToModerateCompact, 0.18, 'low-to-moderate compactness'),
-      weighted(upperTips * (1 - towerLike * 0.55), 0.12, 'upper detail without simple tower'),
-      weighted(scoreBetween(effectiveAspectRatio, 0.72, 1.38), 0.1, 'complex raised proportion'),
+      weighted(spread, 0.3, 'high visible fingertip spread'),
+      weighted(lowToModerateCompact, 0.16, 'low-to-moderate compactness'),
+      weighted(upperTips * (1 - towerLike * 0.55), 0.1, 'upper detail without simple tower'),
+      weighted(scoreBetween(effectiveAspectRatio, 0.72, 1.38), 0.08, 'complex raised proportion'),
       weighted(-dragonTowerPenalty, 0.24, 'dragon penalty: tower-like symmetric seal'),
       weighted(-dragonCompactPenalty, 0.2, 'dragon penalty: compact clasp'),
       weighted(-dragonInterlockPenalty, 0.22, 'dragon penalty: interlocked clasp'),
       weighted(-dragonBundledPenalty, 0.2, 'dragon penalty: bundled compact blob'),
       weighted(-dragonWidePenalty, 0.14, 'dragon penalty: wide horizontal family'),
+      weighted(-dragonOffsetPenalty, 0.18, 'dragon penalty: offset/crossed structure'),
     ],
     snake: [
-      weighted(compact, 0.24, 'very compact central clasp'),
+      weighted(compact, 0.22, 'very compact central clasp'),
       weighted(overlapHigh, 0.22, 'high hand overlap/interlock'),
-      weighted(lowSpread, 0.2, 'low visible fingertip spread'),
-      weighted(squareOrCompactAspect, 0.14, 'square/compact aspect'),
-      weighted(interlockClasp, 0.14, 'interlocked clasp shape'),
+      weighted(interlockClasp, 0.18, 'interlocked clasp shape'),
+      weighted(lowSpread, 0.16, 'low visible fingertip spread'),
+      weighted(squareOrCompactAspect, 0.1, 'square/compact aspect'),
+      weighted(scoreBetween(features.verticalityScore, 0.42, 0.66), 0.08, 'slightly vertical central axis'),
+      weighted(1 - bundledBlob * 0.5, 0.04, 'tighter than boar bundle'),
       weighted(1 - towerLike * 0.55, 0.06, 'not a vertical tower'),
     ],
     horse: [
-      weighted(wide, 0.24, 'wide interlock aspect'),
-      weighted(overlapHigh, 0.2, 'overlapped interlaced center'),
-      weighted(compact, 0.16, 'compact interlaced center'),
-      weighted(horizontal, 0.18, 'horizontal tendency'),
-      weighted(scoreBetween(effectiveFingertipSpread, 0.18, 0.52), 0.14, 'moderate spread, not wing-like'),
-      weighted(1 - towerLike * 0.7, 0.08, 'not tower-like'),
+      weighted(wide, 0.22, 'wide interlock aspect'),
+      weighted(overlapHigh, 0.22, 'overlapped interlaced center'),
+      weighted(interlockClasp, 0.16, 'interlocked center'),
+      weighted(compact, 0.14, 'compact interlaced center'),
+      weighted(horizontal, 0.14, 'horizontal tendency'),
+      weighted(scoreBetween(effectiveFingertipSpread, 0.18, 0.52), 0.12, 'moderate spread, not wing-like'),
+      weighted(1 - towerLike * 0.7, 0.06, 'not tower-like'),
     ],
     ram: [
-      weighted(towerLike, 0.32, 'upward gathered tower shape'),
+      weighted(towerLike, 0.3, 'upward gathered tower shape'),
       weighted(upperTips, 0.22, 'upper fingertip concentration'),
-      weighted(vertical, 0.18, 'vertical gathered shape'),
-      weighted(scoreBetween(effectiveAspectRatio, 0.5, 1.0), 0.12, 'triangular/tower proportion'),
+      weighted(vertical, 0.16, 'vertical gathered shape'),
+      weighted(scoreBetween(effectiveAspectRatio, 0.5, 1.0), 0.1, 'triangular/tower proportion'),
       weighted(scoreBetween(effectiveCompactness, 0.36, 0.74), 0.08, 'gathered but not fully bundled'),
+      weighted(scoreBetween(effectiveFingertipSpread, 0.18, 0.6), 0.08, 'gathered but not narrow tiger'),
+      weighted(scoreMin(effectiveAspectRatio, 0.7), 0.06, 'wider than tiger'),
       weighted(-ramInterlockPenalty, 0.24, 'ram penalty: compact interlock, not tower-like'),
     ],
     monkey: [
-      weighted(offset, 0.3, 'clear offset hand arrangement'),
+      weighted(offset, 0.28, 'clear offset hand arrangement'),
       weighted(horizontal, 0.2, 'horizontal/sideways structure'),
-      weighted(asymmetric, 0.2, 'lower symmetry than tower seals'),
-      weighted(overlapModerate, 0.16, 'moderate overlap while crossed'),
-      weighted(scoreBetween(features.verticalityScore, 0.36, 0.62), 0.14, 'not a pure vertical tower'),
+      weighted(asymmetric, 0.18, 'lower symmetry than tower seals'),
+      weighted(overlapModerate, 0.14, 'moderate overlap while crossed'),
+      weighted(scoreBetween(features.verticalityScore, 0.36, 0.62), 0.12, 'not a pure vertical tower'),
+      weighted(scoreMin(features.normalizedHandCenterDistance, 0.32), 0.08, 'hands clearly offset, not stacked'),
     ],
     rooster: [
-      weighted(horizontal, 0.32, 'flat wing-like tendency'),
-      weighted(wide, 0.24, 'wide combined silhouette'),
-      weighted(spread, 0.22, 'lateral fingertip spread'),
-      weighted(1 - compact * 0.55, 0.12, 'low-to-moderate compactness'),
+      weighted(horizontal, 0.28, 'flat wing-like tendency'),
+      weighted(wide, 0.22, 'wide combined silhouette'),
+      weighted(spread, 0.2, 'lateral fingertip spread'),
+      weighted(1 - compact * 0.65, 0.12, 'low-to-moderate compactness'),
       weighted(flatStack, 0.1, 'flat top-bottom stack'),
+      weighted(scoreMax(features.handBoxOverlapRatio, 0.6), 0.08, 'less tight overlap than horse'),
     ],
     dog: [
-      weighted(compact, 0.24, 'stable compact clasp'),
-      weighted(squareOrCompactAspect, 0.22, 'box-like square aspect'),
-      weighted(overlapModerate, 0.16, 'moderate overlap'),
-      weighted(symmetric, 0.16, 'balanced stable hand pair'),
-      weighted(horizontal, 0.12, 'lower verticality'),
+      weighted(compact, 0.22, 'stable compact clasp'),
+      weighted(squareOrCompactAspect, 0.2, 'box-like square aspect'),
+      weighted(overlapModerate, 0.14, 'moderate overlap'),
+      weighted(symmetric, 0.18, 'balanced stable hand pair'),
+      weighted(scoreBetween(features.verticalityScore, 0.36, 0.6), 0.08, 'not strongly vertical'),
+      weighted(1 - bundledBlob * 0.55, 0.08, 'less bundle-like than boar'),
       weighted(1 - towerLike * 0.7, 0.1, 'not a tower'),
     ],
     boar: [
       weighted(bundledBlob, 0.24, 'bundled compact blob'),
-      weighted(compact, 0.2, 'fist-like compactness'),
-      weighted(lowSpread, 0.2, 'low visible fingertip spread'),
+      weighted(compact, 0.18, 'fist-like compactness'),
+      weighted(lowSpread, 0.18, 'low visible fingertip spread'),
       weighted(lowerTips, 0.14, 'fingertips sit lower in the bundle'),
-      weighted(horizontal, 0.12, 'low or wide bundle'),
-      weighted(notTall, 0.1, 'not tower-like'),
+      weighted(horizontal, 0.1, 'low or wide bundle'),
+      weighted(notTall, 0.08, 'not tower-like'),
+      weighted(1 - interlockClasp * 0.5, 0.08, 'bundle, not snake-tight interlock'),
     ],
   }
 
@@ -430,72 +449,85 @@ function scoreSealFamilies(features: CoarseGestureFeatures): SealFamilyScore[] {
   } = measures
   const handOffset = scoreMin(features.normalizedHandCenterDistance, 0.36)
   const lowToModerateCompact = scoreBetween(effectiveCompactness, 0.16, 0.66)
+  const notCompactInterlock = 1 - Math.max(interlockClasp, compact * 0.85) * 0.85
+  const notTowerLike = 1 - towerLike * 0.75
+  const notBundled = 1 - bundledBlob * 0.7
   const complexRaised =
     spread *
     vertical *
     lowToModerateCompact *
-    (1 - towerLike * 0.6) *
-    (1 - interlockClasp * 0.5) *
-    (1 - horizontal * wide * 0.35)
+    (1 - towerLike * 0.65) *
+    (1 - interlockClasp * 0.55) *
+    (1 - bundledBlob * 0.5) *
+    (1 - horizontal * wide * 0.4) *
+    (1 - offset * 0.35)
 
   const familyScores: SealFamilyScore[] = [
     {
       family: 'vertical_tower',
       score: weightedAverage([
-        weighted(towerLike, 0.36, 'tower-like upper gathered shape'),
-        weighted(vertical, 0.22, 'vertical structure'),
-        weighted(scoreMin(features.upperFingertipScore, 0.58), 0.22, 'upper fingertip concentration'),
-        weighted(tallNarrow, 0.2, 'tall/narrow aspect'),
+        weighted(towerLike, 0.32, 'tower-like upper gathered shape'),
+        weighted(vertical, 0.2, 'vertical structure'),
+        weighted(scoreMin(features.upperFingertipScore, 0.58), 0.2, 'upper fingertip concentration'),
+        weighted(tallNarrow, 0.18, 'tall/narrow aspect'),
+        weighted(notCompactInterlock, 0.1, 'not a compact interlock'),
       ]),
-      reasons: ['tiger/ram: tower-like, vertical, upper fingertips'],
+      reasons: ['tiger/ram: tower-like, vertical, upper fingertips, not interlock'],
     },
     {
       family: 'compact_clasp',
       score: weightedAverage([
-        weighted(interlockClasp, 0.3, 'interlocked clasp'),
-        weighted(bundledBlob, 0.24, 'bundled blob'),
-        weighted(compact, 0.24, 'compactness'),
-        weighted(lowSpread, 0.22, 'low fingertip spread'),
+        weighted(Math.max(interlockClasp, bundledBlob), 0.28, 'interlock OR bundle evidence'),
+        weighted(compact, 0.22, 'compactness'),
+        weighted(lowSpread, 0.18, 'low fingertip spread'),
+        weighted(scoreMin(features.handBoxOverlapRatio, 0.4), 0.14, 'moderate-to-high overlap'),
+        weighted(notTowerLike, 0.1, 'not tower-like'),
+        weighted(1 - wide * 0.5, 0.08, 'not wide-horizontal'),
       ]),
-      reasons: ['snake/dog/boar: compact clasp or bundle'],
+      reasons: ['snake/dog/boar: compact clasp or bundle, not tower, not wide'],
     },
     {
       family: 'compact_hidden',
       score: weightedAverage([
-        weighted(compact, 0.24, 'moderate/high compactness'),
+        weighted(compact, 0.22, 'moderate/high compactness'),
         weighted(overlapModerate, 0.18, 'moderate overlap'),
         weighted(scoreMax(features.normalizedHandCenterDistance, 0.42), 0.18, 'close hand centers'),
-        weighted(scoreBetween(features.fingertipSpreadScore, 0.12, 0.56), 0.18, 'low-to-moderate fingertip spread'),
-        weighted(1 - towerLike * 0.7, 0.12, 'not tower-like'),
-        weighted(1 - wide * horizontal * 0.72, 0.06, 'not wide interlock'),
-        weighted(1 - bundledBlob * 0.58, 0.04, 'not bundled boar-like blob'),
+        weighted(scoreBetween(features.fingertipSpreadScore, 0.12, 0.56), 0.16, 'low-to-moderate fingertip spread'),
+        weighted(notTowerLike, 0.12, 'not tower-like'),
+        weighted(1 - wide * horizontal * 0.78, 0.06, 'not wide interlock'),
+        weighted(notBundled, 0.04, 'less bundled than boar'),
+        weighted(1 - interlockClasp * 0.55, 0.04, 'less interlocked than snake'),
       ]),
-      reasons: ['rat: compact hidden-finger clasp'],
+      reasons: ['rat: compact hidden-finger clasp, not snake-tight, not boar-bundled'],
     },
     {
       family: 'wide_interlock',
       score: weightedAverage([
-        weighted(horizontal, 0.3, 'horizontal tendency'),
-        weighted(wide, 0.28, 'wide aspect'),
-        weighted(interlockClasp, 0.2, 'interlocked structure'),
-        weighted(scoreBetween(features.fingertipSpreadScore, 0.2, 0.76), 0.22, 'moderate lateral spread'),
+        weighted(horizontal, 0.26, 'horizontal tendency'),
+        weighted(wide, 0.24, 'wide aspect'),
+        weighted(scoreMin(features.handBoxOverlapRatio, 0.34), 0.18, 'interlock/overlap presence'),
+        weighted(scoreBetween(features.fingertipSpreadScore, 0.2, 0.76), 0.18, 'moderate lateral spread'),
+        weighted(notTowerLike, 0.08, 'not tower-like'),
+        weighted(1 - scoreMax(features.normalizedHandCenterDistance, 0.34) * 0.6, 0.06, 'not super-tight compact_hidden'),
       ]),
-      reasons: ['horse/rooster: wide horizontal interlock'],
+      reasons: ['horse/rooster: wide horizontal interlock, not tower, not hidden-tight'],
     },
     {
       family: 'offset_cross',
       score: weightedAverage([
-        weighted(offset, 0.38, 'crossing or offset score'),
-        weighted(asymmetric, 0.28, 'asymmetry'),
-        weighted(handOffset, 0.22, 'hand center offset'),
-        weighted(1 - compact * 0.55, 0.12, 'not a pure compact clasp'),
+        weighted(offset, 0.32, 'crossing or offset score'),
+        weighted(asymmetric, 0.24, 'asymmetry'),
+        weighted(handOffset, 0.2, 'hand center offset'),
+        weighted(1 - compact * 0.6, 0.12, 'not a pure compact clasp'),
+        weighted(notBundled, 0.06, 'not a bundled blob'),
+        weighted(notTowerLike, 0.06, 'not a vertical tower'),
       ]),
-      reasons: ['ox/monkey/rabbit: offset or crossed hands'],
+      reasons: ['ox/monkey/rabbit: offset or crossed hands, not compact/tower/bundle'],
     },
     {
       family: 'complex_raised',
       score: clamp01(complexRaised),
-      reasons: ['dragon: spread, raised, non-compact, not simple tower'],
+      reasons: ['dragon: spread + raised + non-compact + not simple tower + not bundle + not offset'],
     },
     {
       family: 'unknown',
@@ -523,6 +555,7 @@ function applyFamilyContextToScores(
     const compactClaspScore = familyScoreMap.compact_clasp ?? 0
     const compactHiddenScore = familyScoreMap.compact_hidden ?? 0
     const wideInterlockScore = familyScoreMap.wide_interlock ?? 0
+    const offsetCrossScore = familyScoreMap.offset_cross ?? 0
     const familyAdjustedScore =
       score.seal === 'dragon'
         ? score.score *
@@ -533,9 +566,10 @@ function applyFamilyContextToScores(
                 compactClaspScore,
                 compactHiddenScore,
                 wideInterlockScore,
+                offsetCrossScore,
               ) *
-                0.55 +
-              0.35,
+                SEAL_RULE_CONFIG.DRAGON_FAMILY_GATE_PENALTY +
+              SEAL_RULE_CONFIG.DRAGON_FAMILY_GATE_FLOOR,
           )
         : score.score * (0.72 + familyScore * 0.28)
 
