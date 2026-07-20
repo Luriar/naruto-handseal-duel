@@ -1,0 +1,10 @@
+export type RecognitionFailureReason =
+  | 'low_confidence'
+  | 'hands_lost'
+  | 'one_hand_missing'
+  | 'off_center'
+  | 'occlusion'
+  | 'ambiguous_between_seals'
+  | 'wrong_seal'
+  | 'timeout'
+  | 'none'
