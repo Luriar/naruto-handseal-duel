@@ -14,7 +14,8 @@ import {
   calculateSealMetrics,
   createConfusionMatrix,
 } from '../seal-recognition/confusionMatrix'
-import { classifySeal, type PredictionStatus } from '../seal-recognition/ruleBasedSealClassifier'
+import { classifySealV2 as classifySeal } from '../seal-recognition/sealClassifier'
+import type { PredictionStatus } from '../seal-recognition/ruleBasedSealClassifier'
 import {
   ALL_SEALS,
   MVP_0_LABELS,
